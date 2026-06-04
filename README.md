@@ -10,14 +10,14 @@ the surrounding system**.
 
 ```
 cargo run --release -- \
-    --prefix orphan \
+    --prefix exiro \
     --workers 8 \
     --batch-size 65536
 ```
 
 ```
 onion-gpu-miner  [cpu-rayon]
-targets: orphan
+targets: exiro
 ------------------------------------
 Attempts:
     4,210,000/s
