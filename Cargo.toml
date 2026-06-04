@@ -1,0 +1,37 @@
+[package]
+name = "onion-gpu-miner"
+version = "0.1.0"
+edition = "2021"
+description = "CPU-first Onion v3 vanity generator with a GPU-ready, batch-first architecture."
+
+# Keep the binary fast for the (eventually GPU-bound) hot path.
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+
+[dependencies]
+# Parallel batch execution on the CPU. This is the stand-in for a GPU kernel
+# dispatch: when we migrate, `process_batch` swaps rayon for a device launch.
+rayon = "1.10"
+
+# Bounded, lock-light channels for the controller <-> worker pipeline.
+crossbeam-channel = "0.5"
+
+# Ed25519 public-key derivation kernel (the compute-heavy part).
+curve25519-dalek = { version = "4", default-features = true }
+
+# Hashing: SHA-512 for the ed25519 key expansion, SHA3-256 for the onion checksum.
+sha2 = "0.10"
+sha3 = "0.10"
+
+# Master-seed entropy only (not in the hot path).
+rand = "0.8"
+
+# Checkpoint + result serialization (off the hot path).
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# CLI.
+clap = { version = "4", features = ["derive"] }
