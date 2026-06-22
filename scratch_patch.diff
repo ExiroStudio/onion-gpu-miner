@@ -1,0 +1,35 @@
+--- src/compute/cpu.rs
++++ src/compute/cpu.rs
+@@ -44,20 +44,30 @@
+     fn process_batch(&self, batch: &[Candidate]) -> Vec<DerivedAddress> {
+         let prefixes = crate::matcher::PREFIXES.get().expect("Prefixes not initialized");
+         
++        let t0 = std::time::Instant::now();
+         let pubkeys: Vec<_> = self.pool.install(|| {
+             batch.par_iter().map(|c| derive_pubkey(&c.seed, BACKEND)).collect()
+         });
++        let t1 = std::time::Instant::now();
+         
+         let matches: Vec<_> = self.pool.install(|| {
+             pubkeys.par_iter().enumerate().filter_map(|(i, pk)| {
+                 if derive_match(pk, prefixes) {
+                     Some((i, *pk))
+                 } else {
+                     None
+                 }
+             }).collect()
+         });
++        let t2 = std::time::Instant::now();
+ 
+-        self.pool.install(|| {
++        let res = self.pool.install(|| {
+             matches.par_iter().map(|(i, pk)| finalize_match(&batch[*i], pk)).collect()
+-        })
++        });
++        let t3 = std::time::Instant::now();
++        println!("Pass 1: {:?}", t1 - t0);
++        println!("Pass 2: {:?}", t2 - t1);
++        println!("Pass 3: {:?}", t3 - t2);
++        res
+     }
+ }

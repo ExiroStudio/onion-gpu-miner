@@ -1,55 +1,14 @@
 //! Output / storage layer.
 //!
-//! Two responsibilities, both deliberately kept *off* the compute hot path:
-//!   * persist a successful match (Tor-compatible key files + a JSONL log)
-//!   * save/load checkpoints (per-worker counters + master seed)
-//!
-//! Writes happen on the controller thread when a result arrives or on a coarse
-//! interval — never inside `process_batch`.
+//! Persist a successful match (Tor-compatible key files + a simple log)
 
 use crate::types::MiningResult;
-use crate::util::{from_hex, to_hex};
-use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::Path;
 
-/// Resumable progress: which master seed and how far each worker has counted.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Checkpoint {
-    pub master_seed_hex: String,
-    pub counters: Vec<u64>,
-}
-
-impl Checkpoint {
-    pub fn new(master: &[u8; 32], counters: Vec<u64>) -> Self {
-        Self {
-            master_seed_hex: to_hex(master),
-            counters,
-        }
-    }
-
-    pub fn master_seed(&self) -> Option<[u8; 32]> {
-        from_hex::<32>(&self.master_seed_hex)
-    }
-}
-
-pub fn save_checkpoint(path: &Path, cp: &Checkpoint) -> io::Result<()> {
-    let json = serde_json::to_string_pretty(cp)?;
-    // Write to a temp file then rename, so a crash mid-write can't corrupt it.
-    let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, json)?;
-    fs::rename(&tmp, path)?;
-    Ok(())
-}
-
-pub fn load_checkpoint(path: &Path) -> Option<Checkpoint> {
-    let data = fs::read_to_string(path).ok()?;
-    serde_json::from_str(&data).ok()
-}
-
 /// Persist a match as a Tor-style hidden-service key directory plus an append
-/// to `results.jsonl`.
+/// to `results.log`.
 ///
 /// Layout:
 /// ```text
@@ -57,7 +16,7 @@ pub fn load_checkpoint(path: &Path) -> Option<Checkpoint> {
 ///     hostname
 ///     hs_ed25519_public_key
 ///     hs_ed25519_secret_key
-/// <out_dir>/results.jsonl
+/// <out_dir>/results.log
 /// ```
 pub fn save_result(
     out_dir: &Path,
@@ -84,8 +43,9 @@ pub fn save_result(
     let mut log = OpenOptions::new()
         .create(true)
         .append(true)
-        .open(out_dir.join("results.jsonl"))?;
-    writeln!(log, "{}", serde_json::to_string(result)?)?;
+        .open(out_dir.join("results.log"))?;
+    writeln!(log, "[{}] prefix: {} | seed: {} | w/c: {}/{}", 
+        result.onion, result.matched_prefix, result.seed_hex, result.worker_id, result.counter)?;
 
     Ok(())
 }

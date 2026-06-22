@@ -16,9 +16,6 @@ panic = "abort"
 # dispatch: when we migrate, `process_batch` swaps rayon for a device launch.
 rayon = "1.10"
 
-# Bounded, lock-light channels for the controller <-> worker pipeline.
-crossbeam-channel = "0.5"
-
 # Ed25519 public-key derivation kernel (the compute-heavy part).
 curve25519-dalek = { version = "4", default-features = true }
 
@@ -29,9 +26,8 @@ sha3 = "0.10"
 # Master-seed entropy only (not in the hot path).
 rand = "0.8"
 
-# Checkpoint + result serialization (off the hot path).
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-
 # CLI.
 clap = { version = "4", features = ["derive"] }
+libsodium-sys = "0.2.7"
+ctrlc = "3.5.2"
+num_cpus = "1.17.0"

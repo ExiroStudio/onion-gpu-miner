@@ -5,8 +5,6 @@
 //! cheaply. The compute kernel only ever needs `Candidate` in and
 //! `DerivedAddress` out — that keeps the GPU port narrow.
 
-use serde::Serialize;
-
 /// Onion v3 address version byte (always 0x03).
 pub const ONION_VERSION: u8 = 0x03;
 
@@ -39,7 +37,7 @@ pub struct DerivedAddress {
 }
 
 /// A successful match, ready to be persisted by the output layer.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub struct MiningResult {
     /// Full host including the `.onion` suffix.
     pub onion: String,

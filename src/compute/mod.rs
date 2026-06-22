@@ -141,9 +141,33 @@ fn base32_lower(data: &[u8]) -> String {
     out
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum EdBackend {
+    Curve25519Dalek,
+    Libsodium,
+}
+
 #[inline]
-pub fn derive_pubkey(seed: &[u8; 32]) -> [u8; 32] {
-    public_key_from_seed(seed)
+pub fn derive_pubkey(seed: &[u8; 32], backend: EdBackend) -> [u8; 32] {
+    match backend {
+        EdBackend::Curve25519Dalek => public_key_from_seed(seed),
+        EdBackend::Libsodium => public_key_from_seed_libsodium(seed),
+    }
+}
+
+#[inline]
+pub fn public_key_from_seed_libsodium(seed: &[u8; 32]) -> [u8; 32] {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| {
+        unsafe { libsodium_sys::sodium_init(); }
+    });
+    
+    let mut pk = [0u8; 32];
+    let mut sk = [0u8; 64];
+    unsafe {
+        libsodium_sys::crypto_sign_seed_keypair(pk.as_mut_ptr(), sk.as_mut_ptr(), seed.as_ptr());
+    }
+    pk
 }
 
 #[inline]
@@ -239,13 +263,25 @@ mod tests {
     }
 
     #[test]
-    fn matches_rfc8032_test_vector_1() {
-        // RFC 8032, Section 7.1, Test 1.
+    fn matches_rfc8032_test_vector_1_dalek() {
         let seed = crate::util::from_hex::<32>(
             "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
         )
         .unwrap();
-        let pk = public_key_from_seed(&seed);
+        let pk = derive_pubkey(&seed, EdBackend::Curve25519Dalek);
+        assert_eq!(
+            crate::util::to_hex(&pk),
+            "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+        );
+    }
+
+    #[test]
+    fn matches_rfc8032_test_vector_1_libsodium() {
+        let seed = crate::util::from_hex::<32>(
+            "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+        )
+        .unwrap();
+        let pk = derive_pubkey(&seed, EdBackend::Libsodium);
         assert_eq!(
             crate::util::to_hex(&pk),
             "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"

@@ -13,11 +13,12 @@
 //! }
 //! ```
 
-use super::{derive_pubkey, derive_match, finalize_match, ComputeBackend};
+use super::{derive_pubkey, derive_match, finalize_match, ComputeBackend, EdBackend};
 use crate::types::{Candidate, DerivedAddress};
 use rayon::prelude::*;
 use rayon::ThreadPool;
-use std::time::Instant;
+
+const BACKEND: EdBackend = EdBackend::Libsodium;
 
 pub struct CpuComputeBackend {
     pool: ThreadPool,
@@ -42,35 +43,15 @@ impl ComputeBackend for CpuComputeBackend {
     fn process_batch(&self, batch: &[Candidate]) -> Vec<DerivedAddress> {
         let prefixes = crate::matcher::PREFIXES.get().expect("Prefixes not initialized");
         
-        let t0 = Instant::now();
-        let pubkeys: Vec<_> = self.pool.install(|| {
-            batch.par_iter().map(|c| derive_pubkey(&c.seed)).collect()
-        });
-        
-        let t1 = Instant::now();
-        let matches: Vec<_> = self.pool.install(|| {
-            pubkeys.par_iter().enumerate().filter_map(|(i, pk)| {
-                if derive_match(pk, prefixes) {
-                    Some((i, *pk))
+        self.pool.install(|| {
+            batch.par_iter().filter_map(|c| {
+                let pk = derive_pubkey(&c.seed, BACKEND);
+                if derive_match(&pk, prefixes) {
+                    Some(finalize_match(c, &pk))
                 } else {
                     None
                 }
             }).collect()
-        });
-
-        let t2 = Instant::now();
-        let derived: Vec<_> = self.pool.install(|| {
-            matches.par_iter().map(|(i, pk)| finalize_match(&batch[*i], pk)).collect()
-        });
-        let t3 = Instant::now();
-
-        println!("Compute:\n{} ms\n\nMatch:\n{} ms\n\nEncode:\n{} ms\n\nBatch:\n{} ms\n", 
-            (t1 - t0).as_millis(),
-            (t2 - t1).as_millis(),
-            (t3 - t2).as_millis(),
-            (t3 - t0).as_millis()
-        );
-
-        derived
+        })
     }
 }
