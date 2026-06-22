@@ -4,6 +4,9 @@
 //! shared across threads behind an `Arc` with no synchronization.
 
 use crate::types::DerivedAddress;
+use std::sync::OnceLock;
+
+pub static PREFIXES: OnceLock<Vec<Vec<u8>>> = OnceLock::new();
 
 /// Holds the set of target prefixes and tests derived addresses against them.
 pub struct Matcher {
@@ -12,6 +15,7 @@ pub struct Matcher {
 
 impl Matcher {
     pub fn new(prefixes: Vec<String>) -> Self {
+        let _ = PREFIXES.set(prefixes.iter().map(|p| p.as_bytes().to_vec()).collect());
         Self { prefixes }
     }
 

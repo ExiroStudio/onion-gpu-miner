@@ -13,10 +13,11 @@
 //! }
 //! ```
 
-use super::{derive_address, ComputeBackend};
+use super::{derive_pubkey, derive_match, finalize_match, ComputeBackend};
 use crate::types::{Candidate, DerivedAddress};
 use rayon::prelude::*;
 use rayon::ThreadPool;
+use std::time::Instant;
 
 pub struct CpuComputeBackend {
     pool: ThreadPool,
@@ -39,21 +40,37 @@ impl ComputeBackend for CpuComputeBackend {
     }
 
     fn process_batch(&self, batch: &[Candidate]) -> Vec<DerivedAddress> {
-        // ===================================================================
-        // GPU MIGRATION SEAM
-        // -------------------------------------------------------------------
-        // Today: fan the batch across the CPU pool with a data-parallel map.
-        //
-        // On GPU this becomes roughly:
-        //   1. copy `batch` seeds into a pinned host buffer
-        //   2. cudaMemcpyAsync -> device
-        //   3. launch `ed25519_derive<<<grid, block>>>(d_seeds, d_pubkeys)`
-        //      (one GPU thread per candidate; SHA-512 + scalar-mult on device)
-        //   4. copy pubkeys back (or run the cheap onion encode on-device too)
-        //
-        // The signature and the rest of the program do not change.
-        // ===================================================================
-        self.pool
-            .install(|| batch.par_iter().map(derive_address).collect())
+        let prefixes = crate::matcher::PREFIXES.get().expect("Prefixes not initialized");
+        
+        let t0 = Instant::now();
+        let pubkeys: Vec<_> = self.pool.install(|| {
+            batch.par_iter().map(|c| derive_pubkey(&c.seed)).collect()
+        });
+        
+        let t1 = Instant::now();
+        let matches: Vec<_> = self.pool.install(|| {
+            pubkeys.par_iter().enumerate().filter_map(|(i, pk)| {
+                if derive_match(pk, prefixes) {
+                    Some((i, *pk))
+                } else {
+                    None
+                }
+            }).collect()
+        });
+
+        let t2 = Instant::now();
+        let derived: Vec<_> = self.pool.install(|| {
+            matches.par_iter().map(|(i, pk)| finalize_match(&batch[*i], pk)).collect()
+        });
+        let t3 = Instant::now();
+
+        println!("Compute:\n{} ms\n\nMatch:\n{} ms\n\nEncode:\n{} ms\n\nBatch:\n{} ms\n", 
+            (t1 - t0).as_millis(),
+            (t2 - t1).as_millis(),
+            (t3 - t2).as_millis(),
+            (t3 - t0).as_millis()
+        );
+
+        derived
     }
 }

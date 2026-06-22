@@ -141,6 +141,91 @@ fn base32_lower(data: &[u8]) -> String {
     out
 }
 
+#[inline]
+pub fn derive_pubkey(seed: &[u8; 32]) -> [u8; 32] {
+    public_key_from_seed(seed)
+}
+
+#[inline]
+pub fn matches_prefix_fast(pubkey: &[u8; 32], prefix: &[u8]) -> bool {
+    let mut buffer: u32 = 0;
+    let mut bits: u32 = 0;
+    let mut prefix_idx = 0;
+
+    for &b in pubkey {
+        buffer = (buffer << 8) | b as u32;
+        bits += 8;
+        while bits >= 5 {
+            bits -= 5;
+            let idx = (buffer >> bits) & 0x1f;
+            if prefix[prefix_idx] != B32_ALPHABET[idx as usize] {
+                return false;
+            }
+            prefix_idx += 1;
+            if prefix_idx == prefix.len() {
+                return true;
+            }
+        }
+    }
+    
+    let mut hasher = Sha3_256::new();
+    hasher.update(b".onion checksum");
+    hasher.update(pubkey);
+    hasher.update([ONION_VERSION]);
+    let checksum = hasher.finalize();
+    
+    let data = [checksum[0], checksum[1], ONION_VERSION];
+    for &b in &data {
+        buffer = (buffer << 8) | b as u32;
+        bits += 8;
+        while bits >= 5 {
+            bits -= 5;
+            let idx = (buffer >> bits) & 0x1f;
+            if prefix[prefix_idx] != B32_ALPHABET[idx as usize] {
+                return false;
+            }
+            prefix_idx += 1;
+            if prefix_idx == prefix.len() {
+                return true;
+            }
+        }
+    }
+    
+    if bits > 0 {
+        let idx = (buffer << (5 - bits)) & 0x1f;
+        if prefix[prefix_idx] != B32_ALPHABET[idx as usize] {
+            return false;
+        }
+        prefix_idx += 1;
+        if prefix_idx == prefix.len() {
+            return true;
+        }
+    }
+    
+    false
+}
+
+#[inline]
+pub fn derive_match(pubkey: &[u8; 32], prefixes: &[Vec<u8>]) -> bool {
+    for p in prefixes {
+        if matches_prefix_fast(pubkey, p) {
+            return true;
+        }
+    }
+    false
+}
+
+#[inline]
+pub fn finalize_match(c: &Candidate, pubkey: &[u8; 32]) -> DerivedAddress {
+    DerivedAddress {
+        seed: c.seed,
+        public_key: *pubkey,
+        onion: encode_onion(pubkey),
+        worker_id: c.worker_id,
+        counter: c.counter,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
